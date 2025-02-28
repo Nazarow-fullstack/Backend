@@ -33,4 +33,3 @@ async def get_data():
     
     df = excel_data.parse(excel_data.sheet_names[0])  # Read the first sheet
     return df.to_dict(orient="records")  # Convert to JSON and return
-
