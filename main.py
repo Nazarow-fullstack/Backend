@@ -1,40 +1,36 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-import shutil
-import os
+import pandas as pd
+from io import BytesIO
 
 app = FastAPI()
 
-# CORS configuration (allowing requests from the frontend)
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Only allow localhost:3000 (your frontend)
+    allow_origins=["*"],  # Allow requests from anywhere (change for security)
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-UPLOAD_FOLDER = "uploads"
-EXCEL_FILE_NAME = "data.xlsx"
-
-# Ensure the upload folder exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Store the uploaded Excel file in memory
+excel_data = None
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
-    # Print the received file name to debug
-    print(f"Received file: {file.filename}")
+    global excel_data
+    contents = await file.read()  # Read the file into memory
+    excel_data = pd.ExcelFile(BytesIO(contents))  # Store it as a Pandas ExcelFile object
 
-    file_path = os.path.join(UPLOAD_FOLDER, EXCEL_FILE_NAME)
+    return {"message": "File uploaded successfully", "filename": file.filename}
 
-    # Remove old file if it exists
-    if os.path.exists(file_path):
-        os.remove(file_path)
+@app.get("/get-data")
+async def get_data():
+    global excel_data
+    if excel_data is None:
+        return {"error": "No Excel file uploaded yet."}
+    
+    df = excel_data.parse(excel_data.sheet_names[0])  # Read the first sheet
+    return df.to_dict(orient="records")  # Convert to JSON and return
 
-    # Save the new file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    print(f"File saved to {file_path}")
-
-    return {"message": "File uploaded successfully", "filename": EXCEL_FILE_NAME}
