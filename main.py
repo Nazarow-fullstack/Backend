@@ -1,50 +1,44 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+import json
 import os
+from fastapi.responses import FileResponse
 
 app = FastAPI()
 
-# CORS configuration (allows frontend requests)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow requests from anywhere (update for security)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Folder to store uploaded files
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# Store uploaded file path
-excel_file_path = None
+JSON_FILE = "data.json"
+EXCEL_FILE = "data.xlsx"
 
 @app.post("/upload")
-async def upload_excel(file: UploadFile = File(...)):
-    global excel_file_path
-    try:
-        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-        with open(file_path, "wb") as f:
-            f.write(await file.read())  # Save file
-        
-        excel_file_path = file_path  # Store path
-        return {"message": "File uploaded successfully", "filename": file.filename}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
-
-@app.get("/get-data")
-async def get_data():
-    global excel_file_path
-    if excel_file_path is None:
-        raise HTTPException(status_code=400, detail="No Excel file uploaded yet.")
+async def upload_file(file: UploadFile = File(...)):
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are allowed")
     
-    try:
-        df = pd.read_excel(excel_file_path)  # Read Excel file
-        if df.empty:
-            raise HTTPException(status_code=400, detail="Uploaded Excel sheet is empty.")
-        
-        return df.to_dict(orient="records")  # Convert to JSON for Telegram bot
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading Excel file: {str(e)}")
+    # Read the Excel file into a Pandas DataFrame
+    df = pd.read_excel(file.file)
+    
+    # Convert DataFrame to JSON
+    json_data = df.to_json(orient="records", indent=4)
+    
+    # Save JSON data to a file
+    with open(JSON_FILE, "w", encoding="utf-8") as f:
+        f.write(json_data)
+    
+    return {"message": "File uploaded and converted to JSON successfully"}
+
+@app.get("/download")
+def download_file():
+    if not os.path.exists(JSON_FILE):
+        raise HTTPException(status_code=404, detail="No data available")
+    
+    # Read JSON data
+    with open(JSON_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    # Convert JSON back to DataFrame
+    df = pd.DataFrame(data)
+    
+    # Save it as an Excel file
+    df.to_excel(EXCEL_FILE, index=False)
+    
+    return FileResponse(EXCEL_FILE, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="data.xlsx")
